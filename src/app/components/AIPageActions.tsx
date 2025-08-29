@@ -9,7 +9,7 @@ import {
   DropdownMenuSeparator, 
   DropdownMenuTrigger 
 } from '@/components/ui/dropdown-menu'
-import { Copy, Bot, ExternalLink, Check, ChevronDown, FileText, MessageCircle, Sparkles } from 'lucide-react'
+import { Copy, ExternalLink, Check, ChevronDown, FileText, MessageCircle, Sparkles } from 'lucide-react'
 
 interface AIPageActionsProps {
   pageSlug: string

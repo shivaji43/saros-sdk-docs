@@ -2,25 +2,32 @@
 
 Complete reference for all methods, parameters, and return types in the Saros SDK.
 
+---
+
 ## Table of Contents
 
-- [Core Methods](#core-methods)
-- [Swap Functions](#swap-functions)
-- [Liquidity Functions](#liquidity-functions)
-- [Farming Functions](#farming-functions)
-- [Staking Functions](#staking-functions)
-- [Utility Functions](#utility-functions)
-- [Type Definitions](#type-definitions)
+- **[Core Methods](#core-methods)** - Connection and account management
+- **[Swap Functions](#swap-functions)** - Token swap operations
+- **[Liquidity Functions](#liquidity-functions)** - Liquidity pool management
+- **[Farming Functions](#farming-functions)** - Yield farming operations
+- **[Staking Functions](#staking-functions)** - Single asset staking
+- **[Utility Functions](#utility-functions)** - Helper and conversion functions
+- **[Type Definitions](#type-definitions)** - TypeScript type definitions
+
+---
 
 ## Core Methods
 
-### genConnectionSolana()
+### `genConnectionSolana()`
 
 Creates a connection to Solana mainnet.
 
+**Syntax:**
 ```javascript
 const connection = genConnectionSolana()
 ```
+
+**Parameters:** None
 
 **Returns:** `Connection` - Solana web3 connection object
 
@@ -34,35 +41,74 @@ console.log('Connected to:', connection.rpcEndpoint);
 
 ---
 
-### genOwnerSolana(wallet)
+### `genOwnerSolana(wallet)`
 
 Generates owner account object from wallet address.
 
+**Syntax:**
 ```javascript
 const owner = await genOwnerSolana(walletAddress)
 ```
 
 **Parameters:**
-- `wallet` (string) - Wallet public key address
+- `wallet` **(string)** - Wallet public key address
 
 **Returns:** `Object`
 - `publicKey` - PublicKey object
+- `secretKey` - Secret key (if available)
 
 **Example:**
 ```javascript
-const owner = await genOwnerSolana('5UrM9csUEDBeBqMZTuuZyHRNhbRW4vQ1MgKJDrKU1U2v');
+import { genOwnerSolana } from '@saros-finance/sdk';
+
+const wallet = 'YOUR_WALLET_ADDRESS';
+const owner = await genOwnerSolana(wallet);
+console.log('Owner public key:', owner.publicKey.toBase58());
+```
+
+---
+
+### `getInfoTokenByMint(connection, mint)`
+
+Retrieves token information by mint address.
+
+**Syntax:**
+```javascript
+const tokenInfo = await getInfoTokenByMint(connection, mintAddress)
+```
+
+**Parameters:**
+- `connection` **(Connection)** - Solana connection object
+- `mint` **(string)** - Token mint address
+
+**Returns:** `TokenInfo`
+- `symbol` - Token symbol
+- `name` - Token name
+- `decimals` - Number of decimal places
+- `supply` - Total supply
+
+**Example:**
+```javascript
+import { getInfoTokenByMint, genConnectionSolana } from '@saros-finance/sdk';
+
+const connection = genConnectionSolana();
+const usdcMint = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
+
+const tokenInfo = await getInfoTokenByMint(connection, usdcMint);
+console.log(`Token: ${tokenInfo.symbol} (${tokenInfo.decimals} decimals)`);
 ```
 
 ---
 
 ## Swap Functions
 
-### getSwapAmountSaros(connection, fromMint, toMint, amount, slippage, poolParams)
+### `getSwapAmountSaros(connection, fromMint, toMint, amount, slippage, poolParams)`
 
-Calculate swap output amount with slippage protection.
+Calculates swap output amount and price impact.
 
+**Syntax:**
 ```javascript
-const estimate = await getSwapAmountSaros(
+const quote = await getSwapAmountSaros(
   connection,
   fromMint,
   toMint,
@@ -73,54 +119,64 @@ const estimate = await getSwapAmountSaros(
 ```
 
 **Parameters:**
-- `connection` (Connection) - Solana connection
-- `fromMint` (string) - Source token mint address
-- `toMint` (string) - Destination token mint address  
-- `amount` (number) - Input amount
-- `slippage` (number) - Slippage tolerance percentage
-- `poolParams` (Object) - Pool configuration
-  - `address` (string) - Pool address
-  - `tokens` (Object) - Token information map
-  - `tokenIds` (Array<string>) - Token mint addresses
+- `connection` **(Connection)** - Solana connection object
+- `fromMint` **(string)** - Input token mint address
+- `toMint` **(string)** - Output token mint address
+- `amount` **(number)** - Input amount in token units
+- `slippage` **(number)** - Slippage tolerance percentage (e.g., 0.5 for 0.5%)
+- `poolParams` **(PoolParams)** - Pool configuration object
 
-**Returns:** `Object`
-- `amountOut` (number) - Expected output amount
-- `amountOutWithSlippage` (number) - Minimum output with slippage
-- `priceImpact` (number) - Price impact percentage
-- `rate` (number) - Exchange rate
+**Returns:** `SwapQuote`
+- `amountIn` - Input amount in smallest units
+- `amountOut` - Expected output amount
+- `amountOutWithSlippage` - Minimum output after slippage
+- `priceImpact` - Price impact percentage
+- `fee` - Trading fee amount
 
 **Example:**
 ```javascript
-const estimate = await getSwapAmountSaros(
+import { getSwapAmountSaros, genConnectionSolana } from '@saros-finance/sdk';
+
+const connection = genConnectionSolana();
+const fromMint = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v'; // USDC
+const toMint = 'C98A4nkJXhpVZNAZdHUA95RpTF3T4whtQubL3YobiUX9';   // C98
+
+const poolParams = {
+  address: '2wUvdZA8ZsY714Y5wUL9fkFmupJGGwzui2N74zqJWgty',
+  tokens: {
+    [fromMint]: { decimals: 6, symbol: 'USDC' },
+    [toMint]: { decimals: 6, symbol: 'C98' }
+  },
+  tokenIds: [fromMint, toMint]
+};
+
+const quote = await getSwapAmountSaros(
   connection,
-  'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v', // USDC
-  'C98A4nkJXhpVZNAZdHUA95RpTF3T4whtQubL3YobiUX9',  // C98
-  100,  // 100 USDC
-  0.5,  // 0.5% slippage
-  {
-    address: '2wUvdZA8ZsY714Y5wUL9fkFmupJGGwzui2N74zqJWgty',
-    tokens: { /* token info */ },
-    tokenIds: ['USDC_MINT', 'C98_MINT']
-  }
+  fromMint,
+  toMint,
+  100, // 100 USDC
+  0.5, // 0.5% slippage
+  poolParams
 );
 
-console.log(`You'll receive: ${estimate.amountOut} C98`);
-console.log(`Price impact: ${estimate.priceImpact}%`);
+console.log(`Quote: ${quote.amountOut} C98 for 100 USDC`);
+console.log(`Price impact: ${quote.priceImpact}%`);
 ```
 
 ---
 
-### swapSaros(connection, fromAccount, toAccount, fromAmount, minToAmount, hostFee, poolAddress, programId, wallet, fromMint, toMint)
+### `swapSaros(connection, fromAccount, toAccount, amountIn, amountOutMin, hostFeeAccount, poolAddress, programId, walletAddress, fromMint, toMint)`
 
-Execute a token swap on Saros.
+Executes a token swap transaction.
 
+**Syntax:**
 ```javascript
 const result = await swapSaros(
   connection,
-  fromTokenAccount,
-  toTokenAccount,
-  fromAmount,
-  minToAmount,
+  fromAccount,
+  toAccount,
+  amountIn,
+  amountOutMin,
   hostFeeAccount,
   poolAddress,
   programId,
@@ -131,596 +187,1001 @@ const result = await swapSaros(
 ```
 
 **Parameters:**
-- `connection` (Connection) - Solana connection
-- `fromAccount` (string) - Source token account
-- `toAccount` (string) - Destination token account
-- `fromAmount` (number) - Amount to swap
-- `minToAmount` (number) - Minimum output amount
-- `hostFee` (string|null) - Host fee account (optional)
-- `poolAddress` (PublicKey) - Pool address
-- `programId` (PublicKey) - Swap program ID
-- `wallet` (string) - User wallet address
-- `fromMint` (string) - Source token mint
-- `toMint` (string) - Destination token mint
+- `connection` **(Connection)** - Solana connection object
+- `fromAccount` **(PublicKey)** - Source token account
+- `toAccount` **(PublicKey)** - Destination token account
+- `amountIn` **(number)** - Input amount in smallest units
+- `amountOutMin` **(number)** - Minimum acceptable output amount
+- `hostFeeAccount` **(PublicKey | null)** - Host fee account (optional)
+- `poolAddress` **(PublicKey)** - Swap pool address
+- `programId` **(PublicKey)** - Saros swap program ID
+- `walletAddress` **(string)** - User wallet address
+- `fromMint` **(string)** - Input token mint
+- `toMint` **(string)** - Output token mint
 
-**Returns:** `Object`
-- `isError` (boolean) - Whether swap failed
-- `mess` (string) - Error message or transaction hash
-- `hash` (string) - Transaction signature (if successful)
-
-**Error Codes:**
-- `gasSolNotEnough` - Insufficient SOL for fees
-- `tradeErrFund` - Insufficient token balance
-- `sizeTooSmall` - Swap amount too small
-- `exceedsLimit` - Exceeds pool liquidity
-- `tooLarge` - Transaction too large
+**Returns:** `SwapResult`
+- `isError` - Boolean indicating success/failure
+- `hash` - Transaction signature (if successful)
+- `mess` - Error message (if failed)
 
 **Example:**
 ```javascript
+import { swapSaros, genConnectionSolana } from '@saros-finance/sdk';
+import { PublicKey } from '@solana/web3.js';
+
+const connection = genConnectionSolana();
 const result = await swapSaros(
   connection,
-  userUSDCAccount,
-  userC98Account,
-  100,
-  95,  // Minimum 95 C98 expected
+  new PublicKey('USER_USDC_ACCOUNT'),
+  new PublicKey('USER_C98_ACCOUNT'),
+  100000000, // 100 USDC (6 decimals)
+  50000000,  // Minimum 50 C98 (6 decimals)
   null,
-  new PublicKey(poolAddress),
-  SAROS_SWAP_PROGRAM_ADDRESS_V1,
-  walletAddress,
+  new PublicKey('POOL_ADDRESS'),
+  new PublicKey('PROGRAM_ID'),
+  'USER_WALLET_ADDRESS',
   'USDC_MINT',
   'C98_MINT'
 );
 
 if (!result.isError) {
-  console.log(`Swap successful: ${result.hash}`);
+  console.log('Swap successful! Transaction:', result.hash);
+} else {
+  console.error('Swap failed:', result.mess);
 }
 ```
 
 ---
 
-### swapRouteSaros(connection, ...params)
+### `swapRouteSaros(connection, routes, amountIn, amountOutMin, walletAddress)`
 
-Execute multi-hop swap through intermediate token.
+Executes a multi-hop swap through multiple pools.
 
+**Syntax:**
 ```javascript
 const result = await swapRouteSaros(
   connection,
-  fromAccount,
-  middleAccount,
-  toAccount,
+  routes,
   amountIn,
-  minAmountOut,
-  middleAmount,
-  hostFee,
-  poolA,
-  poolB,
-  programId,
-  wallet,
-  fromMint,
-  toMint,
-  middleMint,
-  callback,
-  transaction
+  amountOutMin,
+  walletAddress
 )
 ```
 
 **Parameters:**
-- All parameters from `swapSaros` plus:
-- `middleAccount` (string) - Intermediate token account
-- `middleAmount` (number) - Expected middle token amount
-- `poolB` (PublicKey) - Second pool address
-- `middleMint` (string) - Intermediate token mint
+- `connection` **(Connection)** - Solana connection object
+- `routes` **(RouteInfo[])** - Array of route information
+- `amountIn` **(number)** - Input amount in smallest units
+- `amountOutMin` **(number)** - Minimum acceptable final output
+- `walletAddress` **(string)** - User wallet address
 
-**Returns:** Same as `swapSaros`
+**Returns:** `SwapResult`
+- `isError` - Boolean indicating success/failure
+- `hash` - Transaction signature (if successful)
+- `mess` - Error message (if failed)
+
+**Example:**
+```javascript
+import { swapRouteSaros, genConnectionSolana } from '@saros-finance/sdk';
+
+const connection = genConnectionSolana();
+const routes = [
+  {
+    poolAddress: 'POOL_1_ADDRESS',
+    fromMint: 'TOKEN_A_MINT',
+    toMint: 'TOKEN_B_MINT'
+  },
+  {
+    poolAddress: 'POOL_2_ADDRESS',
+    fromMint: 'TOKEN_B_MINT',
+    toMint: 'TOKEN_C_MINT'
+  }
+];
+
+const result = await swapRouteSaros(
+  connection,
+  routes,
+  1000000, // Input amount
+  800000,  // Minimum output
+  'USER_WALLET_ADDRESS'
+);
+
+if (!result.isError) {
+  console.log('Route swap successful!', result.hash);
+}
+```
 
 ---
 
 ## Liquidity Functions
 
-### createPool(connection, owner, feeOwner, token0Mint, token1Mint, token0Account, token1Account, token0Amount, token1Amount, curveType, curveParams, tokenProgram, swapProgram)
+### `getPoolInfo(connection, poolAddress)`
 
-Create a new liquidity pool.
+Retrieves comprehensive pool information.
 
-```javascript
-const result = await createPool(
-  connection,
-  ownerAddress,
-  feeOwnerKey,
-  token0MintKey,
-  token1MintKey,
-  token0AccountKey,
-  token1AccountKey,
-  token0Amount,
-  token1Amount,
-  curveType,
-  curveParameters,
-  tokenProgramId,
-  swapProgramId
-)
-```
-
-**Parameters:**
-- `connection` (Connection) - Solana connection
-- `owner` (string) - Pool creator address
-- `feeOwner` (PublicKey) - Fee recipient
-- `token0Mint` (PublicKey) - First token mint
-- `token1Mint` (PublicKey) - Second token mint
-- `token0Account` (PublicKey) - First token account
-- `token1Account` (PublicKey) - Second token account
-- `token0Amount` (string) - Initial token0 amount (in wei)
-- `token1Amount` (string) - Initial token1 amount (in wei)
-- `curveType` (number) - 0 for normal, 1 for stable pairs
-- `curveParams` (BN) - Curve parameters
-- `tokenProgram` (PublicKey) - Token program ID
-- `swapProgram` (PublicKey) - Swap program ID
-
-**Returns:** `Object`
-- `isError` (boolean) - Whether creation failed
-- `mess` (string) - Error message
-- `hash` (string) - Transaction hash
-- `poolAccount` (Keypair) - New pool account
-
-**Example:**
-```javascript
-const result = await createPool(
-  connection,
-  walletAddress,
-  new PublicKey(FEE_OWNER),
-  new PublicKey(USDC_MINT),
-  new PublicKey(C98_MINT),
-  new PublicKey(usdcAccount),
-  new PublicKey(c98Account),
-  '1000000000', // 1000 USDC (6 decimals)
-  '2000000000', // 2000 C98
-  0, // Normal curve
-  new BN(0),
-  TOKEN_PROGRAM_ID,
-  SAROS_SWAP_PROGRAM_ADDRESS_V1
-);
-```
-
----
-
-### depositAllTokenTypes(connection, wallet, user, token0Account, token1Account, lpAmount, pool, program, token0Mint, token1Mint, slippage)
-
-Add liquidity to an existing pool.
-
-```javascript
-const result = await depositAllTokenTypes(
-  connection,
-  walletAddress,
-  userPublicKey,
-  token0Account,
-  token1Account,
-  lpTokenAmount,
-  poolAddress,
-  swapProgramId,
-  token0Mint,
-  token1Mint,
-  slippage
-)
-```
-
-**Parameters:**
-- `connection` (Connection) - Solana connection
-- `wallet` (string) - Wallet address
-- `user` (PublicKey) - User public key
-- `token0Account` (PublicKey) - First token account
-- `token1Account` (PublicKey) - Second token account
-- `lpAmount` (number) - LP tokens to mint
-- `pool` (PublicKey) - Pool address
-- `program` (PublicKey) - Swap program ID
-- `token0Mint` (string) - First token mint
-- `token1Mint` (string) - Second token mint
-- `slippage` (number) - Slippage tolerance
-
-**Returns:** `Object`
-- `isError` (boolean) - Whether deposit failed
-- `mess` (string) - Error message
-- `hash` (string) - Transaction hash
-
----
-
-### withdrawAllTokenTypes(connection, wallet, lpAccount, token0Account, token1Account, lpAmount, pool, program, token0Mint, token1Mint, slippage)
-
-Remove liquidity from pool.
-
-```javascript
-const result = await withdrawAllTokenTypes(
-  connection,
-  walletAddress,
-  userLpTokenAccount,
-  token0Account,
-  token1Account,
-  lpTokenAmount,
-  poolAddress,
-  swapProgramId,
-  token0Mint,
-  token1Mint,
-  slippage
-)
-```
-
-**Parameters:** Similar to `depositAllTokenTypes`
-- `lpAccount` (string) - User's LP token account
-
-**Returns:** Same as `depositAllTokenTypes`
-
----
-
-### getPoolInfo(connection, poolAddress)
-
-Get detailed pool information.
-
+**Syntax:**
 ```javascript
 const poolInfo = await getPoolInfo(connection, poolAddress)
 ```
 
 **Parameters:**
-- `connection` (Connection) - Solana connection
-- `poolAddress` (PublicKey) - Pool address
+- `connection` **(Connection)** - Solana connection object
+- `poolAddress` **(string)** - Pool address
 
-**Returns:** `Object`
-- `token0Mint` (PublicKey) - First token mint
-- `token1Mint` (PublicKey) - Second token mint
-- `token0Account` (PublicKey) - Pool's token0 account
-- `token1Account` (PublicKey) - Pool's token1 account
-- `lpTokenMint` (PublicKey) - LP token mint
-- `feeAccount` (PublicKey) - Fee account
-- `tradeFeeNumerator` (BN) - Trade fee numerator
-- `tradeFeeDenominator` (BN) - Trade fee denominator
-- `curveType` (number) - Curve type
+**Returns:** `PoolInfo`
+- `tokenA` - First token information
+- `tokenB` - Second token information
+- `reserves` - Current pool reserves
+- `totalSupply` - Total LP token supply
+- `fee` - Pool trading fee
+
+**Example:**
+```javascript
+import { getPoolInfo, genConnectionSolana } from '@saros-finance/sdk';
+
+const connection = genConnectionSolana();
+const poolAddress = '2wUvdZA8ZsY714Y5wUL9fkFmupJGGwzui2N74zqJWgty';
+
+const poolInfo = await getPoolInfo(connection, poolAddress);
+console.log('Pool reserves:', poolInfo.reserves);
+console.log('Trading fee:', poolInfo.fee);
+```
+
+---
+
+### `depositAllTokenTypes(connection, poolAddress, amountA, amountB, tokenAccountA, tokenAccountB, lpTokenAccount, walletAddress)`
+
+Adds liquidity to a pool with both tokens.
+
+**Syntax:**
+```javascript
+const result = await depositAllTokenTypes(
+  connection,
+  poolAddress,
+  amountA,
+  amountB,
+  tokenAccountA,
+  tokenAccountB,
+  lpTokenAccount,
+  walletAddress
+)
+```
+
+**Parameters:**
+- `connection` **(Connection)** - Solana connection object
+- `poolAddress` **(string)** - Target pool address
+- `amountA` **(number)** - Amount of token A to deposit
+- `amountB` **(number)** - Amount of token B to deposit
+- `tokenAccountA` **(PublicKey)** - User's token A account
+- `tokenAccountB` **(PublicKey)** - User's token B account
+- `lpTokenAccount` **(PublicKey)** - User's LP token account
+- `walletAddress` **(string)** - User wallet address
+
+**Returns:** `LiquidityResult`
+- `isError` - Boolean indicating success/failure
+- `hash` - Transaction signature (if successful)
+- `lpAmount` - LP tokens received
+- `mess` - Error message (if failed)
+
+**Example:**
+```javascript
+import { depositAllTokenTypes, genConnectionSolana } from '@saros-finance/sdk';
+import { PublicKey } from '@solana/web3.js';
+
+const connection = genConnectionSolana();
+const result = await depositAllTokenTypes(
+  connection,
+  'POOL_ADDRESS',
+  1000000, // 1 USDC (6 decimals)
+  500000,  // 0.5 C98 (6 decimals)
+  new PublicKey('USER_USDC_ACCOUNT'),
+  new PublicKey('USER_C98_ACCOUNT'),
+  new PublicKey('USER_LP_ACCOUNT'),
+  'USER_WALLET_ADDRESS'
+);
+
+if (!result.isError) {
+  console.log('Liquidity added! LP tokens:', result.lpAmount);
+}
+```
+
+---
+
+### `withdrawAllTokenTypes(connection, poolAddress, lpAmount, tokenAccountA, tokenAccountB, lpTokenAccount, walletAddress)`
+
+Removes liquidity from a pool.
+
+**Syntax:**
+```javascript
+const result = await withdrawAllTokenTypes(
+  connection,
+  poolAddress,
+  lpAmount,
+  tokenAccountA,
+  tokenAccountB,
+  lpTokenAccount,
+  walletAddress
+)
+```
+
+**Parameters:**
+- `connection` **(Connection)** - Solana connection object
+- `poolAddress` **(string)** - Target pool address
+- `lpAmount` **(number)** - Amount of LP tokens to burn
+- `tokenAccountA` **(PublicKey)** - User's token A account
+- `tokenAccountB` **(PublicKey)** - User's token B account
+- `lpTokenAccount` **(PublicKey)** - User's LP token account
+- `walletAddress` **(string)** - User wallet address
+
+**Returns:** `LiquidityResult`
+- `isError` - Boolean indicating success/failure
+- `hash` - Transaction signature (if successful)
+- `amountA` - Token A received
+- `amountB` - Token B received
+- `mess` - Error message (if failed)
+
+**Example:**
+```javascript
+import { withdrawAllTokenTypes, genConnectionSolana } from '@saros-finance/sdk';
+import { PublicKey } from '@solana/web3.js';
+
+const connection = genConnectionSolana();
+const result = await withdrawAllTokenTypes(
+  connection,
+  'POOL_ADDRESS',
+  1000000, // 1 LP token
+  new PublicKey('USER_USDC_ACCOUNT'),
+  new PublicKey('USER_C98_ACCOUNT'),
+  new PublicKey('USER_LP_ACCOUNT'),
+  'USER_WALLET_ADDRESS'
+);
+
+if (!result.isError) {
+  console.log('Liquidity removed!');
+  console.log('Received:', result.amountA, 'token A');
+  console.log('Received:', result.amountB, 'token B');
+}
+```
+
+---
+
+### `createPool(connection, tokenAMint, tokenBMint, initialLiquidityA, initialLiquidityB, walletAddress)`
+
+Creates a new liquidity pool.
+
+**Syntax:**
+```javascript
+const result = await createPool(
+  connection,
+  tokenAMint,
+  tokenBMint,
+  initialLiquidityA,
+  initialLiquidityB,
+  walletAddress
+)
+```
+
+**Parameters:**
+- `connection` **(Connection)** - Solana connection object
+- `tokenAMint` **(string)** - First token mint address
+- `tokenBMint` **(string)** - Second token mint address
+- `initialLiquidityA` **(number)** - Initial amount of token A
+- `initialLiquidityB` **(number)** - Initial amount of token B
+- `walletAddress` **(string)** - Pool creator wallet address
+
+**Returns:** `CreatePoolResult`
+- `isError` - Boolean indicating success/failure
+- `hash` - Transaction signature (if successful)
+- `poolAddress` - New pool address
+- `mess` - Error message (if failed)
+
+**Example:**
+```javascript
+import { createPool, genConnectionSolana } from '@saros-finance/sdk';
+
+const connection = genConnectionSolana();
+const result = await createPool(
+  connection,
+  'TOKEN_A_MINT',
+  'TOKEN_B_MINT',
+  1000000000, // 1000 tokens (9 decimals)
+  500000000,  // 500 tokens (9 decimals)
+  'CREATOR_WALLET_ADDRESS'
+);
+
+if (!result.isError) {
+  console.log('Pool created!');
+  console.log('Pool address:', result.poolAddress);
+}
+```
 
 ---
 
 ## Farming Functions
 
-### SarosFarmService.stakePool(connection, payer, pool, amount, program, rewards, lpAddress)
+### `SarosFarmService`
 
-Stake LP tokens in farm.
+Service class for managing yield farming operations.
 
+**Constructor:**
 ```javascript
-const txHash = await SarosFarmService.stakePool(
-  connection,
-  payerAccount,
-  poolAddress,
-  amountBN,
-  farmProgramAddress,
-  rewardsArray,
-  lpTokenAddress
+const farmService = new SarosFarmService(connection)
+```
+
+**Parameters:**
+- `connection` **(Connection)** - Solana connection object
+
+#### `farmService.getFarmInfo(farmAddress)`
+
+Gets information about a specific farm.
+
+**Syntax:**
+```javascript
+const farmInfo = await farmService.getFarmInfo(farmAddress)
+```
+
+**Parameters:**
+- `farmAddress` **(string)** - Farm address
+
+**Returns:** `FarmInfo`
+- `stakingToken` - Token that can be staked
+- `rewardToken` - Reward token earned
+- `apr` - Annual percentage rate
+- `totalStaked` - Total amount staked in farm
+- `userStaked` - User's staked amount
+
+**Example:**
+```javascript
+import { SarosFarmService, genConnectionSolana } from '@saros-finance/sdk';
+
+const connection = genConnectionSolana();
+const farmService = new SarosFarmService(connection);
+
+const farmInfo = await farmService.getFarmInfo('FARM_ADDRESS');
+console.log('APR:', farmInfo.apr);
+console.log('Total staked:', farmInfo.totalStaked);
+```
+
+#### `farmService.deposit(farmAddress, amount, tokenAccount, walletAddress)`
+
+Stakes LP tokens in a farm.
+
+**Syntax:**
+```javascript
+const result = await farmService.deposit(
+  farmAddress,
+  amount,
+  tokenAccount,
+  walletAddress
 )
 ```
 
 **Parameters:**
-- `connection` (Connection) - Solana connection
-- `payer` (Object) - Payer account with publicKey
-- `pool` (PublicKey) - Farm pool address
-- `amount` (BN) - Amount to stake (in wei)
-- `program` (PublicKey) - Farm program address
-- `rewards` (Array) - Reward configuration array
-- `lpAddress` (PublicKey) - LP token mint address
+- `farmAddress` **(string)** - Target farm address
+- `amount` **(number)** - Amount to stake
+- `tokenAccount` **(PublicKey)** - User's LP token account
+- `walletAddress` **(string)** - User wallet address
 
-**Returns:** `string` - Transaction hash or error message
+**Returns:** `FarmResult`
+- `success` - Boolean indicating success/failure
+- `hash` - Transaction signature (if successful)
+- `error` - Error message (if failed)
 
----
-
-### SarosFarmService.unstakePool(connection, payer, pool, lpAddress, amount, program, rewards, isMax)
-
-Unstake LP tokens from farm.
-
+**Example:**
 ```javascript
-const result = await SarosFarmService.unstakePool(
-  connection,
-  payerAccount,
-  poolAddress,
-  lpAddress,
-  amountBN,
-  farmProgramAddress,
-  rewardsArray,
-  isMaxBalance
+import { SarosFarmService, genConnectionSolana } from '@saros-finance/sdk';
+import { PublicKey } from '@solana/web3.js';
+
+const connection = genConnectionSolana();
+const farmService = new SarosFarmService(connection);
+
+const result = await farmService.deposit(
+  'FARM_ADDRESS',
+  1000000, // 1 LP token
+  new PublicKey('USER_LP_ACCOUNT'),
+  'USER_WALLET_ADDRESS'
+);
+
+if (result.success) {
+  console.log('Staked successfully!', result.hash);
+}
+```
+
+#### `farmService.withdraw(farmAddress, amount, tokenAccount, walletAddress)`
+
+Withdraws staked LP tokens from a farm.
+
+**Syntax:**
+```javascript
+const result = await farmService.withdraw(
+  farmAddress,
+  amount,
+  tokenAccount,
+  walletAddress
 )
 ```
 
 **Parameters:**
-- Same as `stakePool` plus:
-- `isMax` (boolean) - Whether to unstake entire balance
+- `farmAddress` **(string)** - Target farm address
+- `amount` **(number)** - Amount to withdraw
+- `tokenAccount` **(PublicKey)** - User's LP token account
+- `walletAddress` **(string)** - User wallet address
 
-**Returns:** `string` - Success message with transaction hash
+**Returns:** `FarmResult`
+- `success` - Boolean indicating success/failure
+- `hash` - Transaction signature (if successful)
+- `rewardsEarned` - Rewards claimed
+- `error` - Error message (if failed)
 
----
-
-### SarosFarmService.claimReward(connection, payer, poolReward, program, mint)
-
-Claim farming rewards.
-
+**Example:**
 ```javascript
-const txHash = await SarosFarmService.claimReward(
-  connection,
-  payerAccount,
-  poolRewardAddress,
-  farmProgramAddress,
-  rewardMintAddress
-)
+const result = await farmService.withdraw(
+  'FARM_ADDRESS',
+  500000, // 0.5 LP tokens
+  new PublicKey('USER_LP_ACCOUNT'),
+  'USER_WALLET_ADDRESS'
+);
+
+if (result.success) {
+  console.log('Withdrawn successfully!');
+  console.log('Rewards earned:', result.rewardsEarned);
+}
+```
+
+#### `farmService.claimRewards(farmAddress, walletAddress)`
+
+Claims pending rewards without withdrawing staked tokens.
+
+**Syntax:**
+```javascript
+const result = await farmService.claimRewards(farmAddress, walletAddress)
 ```
 
 **Parameters:**
-- `connection` (Connection) - Solana connection
-- `payer` (Object) - Payer account
-- `poolReward` (PublicKey) - Pool reward address
-- `program` (PublicKey) - Farm program address
-- `mint` (PublicKey) - Reward token mint
+- `farmAddress` **(string)** - Target farm address
+- `walletAddress` **(string)** - User wallet address
 
-**Returns:** `string` - Transaction hash
+**Returns:** `FarmResult`
+- `success` - Boolean indicating success/failure
+- `hash` - Transaction signature (if successful)
+- `rewardsClaimed` - Amount of rewards claimed
+- `error` - Error message (if failed)
 
----
-
-### SarosFarmService.getListPool({page, size})
-
-Get paginated list of farm pools.
-
+**Example:**
 ```javascript
-const farms = await SarosFarmService.getListPool({
-  page: 1,
-  size: 10
-})
+const result = await farmService.claimRewards(
+  'FARM_ADDRESS',
+  'USER_WALLET_ADDRESS'
+);
+
+if (result.success) {
+  console.log('Rewards claimed:', result.rewardsClaimed);
+}
 ```
-
-**Parameters:**
-- `page` (number) - Page number (1-indexed)
-- `size` (number) - Items per page
-
-**Returns:** `Array<Object>` - Farm pool data with APR and liquidity
 
 ---
 
 ## Staking Functions
 
-### SarosStakeServices.stakePool(...)
+### `SarosStakeServices`
 
-Stake single tokens (not LP tokens).
+Service class for single-asset staking operations.
 
-**Parameters:** Same as `SarosFarmService.stakePool`
-
-**Returns:** Same as farm staking
-
----
-
-### SarosStakeServices.getListPool({page, size})
-
-Get list of single-asset staking pools.
-
+**Constructor:**
 ```javascript
-const stakePools = await SarosStakeServices.getListPool({
-  page: 1,
-  size: 10
-})
+const stakeService = new SarosStakeServices(connection)
 ```
 
-**Returns:** `Array<Object>` - Staking pool data
+**Parameters:**
+- `connection` **(Connection)** - Solana connection object
+
+#### `stakeService.getStakeInfo(stakeAddress)`
+
+Gets information about a staking pool.
+
+**Syntax:**
+```javascript
+const stakeInfo = await stakeService.getStakeInfo(stakeAddress)
+```
+
+**Parameters:**
+- `stakeAddress` **(string)** - Staking pool address
+
+**Returns:** `StakeInfo`
+- `stakingToken` - Token that can be staked
+- `apr` - Annual percentage rate
+- `totalStaked` - Total amount staked
+- `lockPeriod` - Lock period in seconds
+
+**Example:**
+```javascript
+import { SarosStakeServices, genConnectionSolana } from '@saros-finance/sdk';
+
+const connection = genConnectionSolana();
+const stakeService = new SarosStakeServices(connection);
+
+const stakeInfo = await stakeService.getStakeInfo('STAKE_ADDRESS');
+console.log('Staking APR:', stakeInfo.apr);
+console.log('Lock period:', stakeInfo.lockPeriod, 'seconds');
+```
+
+#### `stakeService.stake(stakeAddress, amount, tokenAccount, walletAddress)`
+
+Stakes tokens in a staking pool.
+
+**Syntax:**
+```javascript
+const result = await stakeService.stake(
+  stakeAddress,
+  amount,
+  tokenAccount,
+  walletAddress
+)
+```
+
+**Parameters:**
+- `stakeAddress` **(string)** - Target staking pool address
+- `amount` **(number)** - Amount to stake
+- `tokenAccount` **(PublicKey)** - User's token account
+- `walletAddress` **(string)** - User wallet address
+
+**Returns:** `StakeResult`
+- `success` - Boolean indicating success/failure
+- `hash` - Transaction signature (if successful)
+- `unlockTime` - When tokens can be unstaked
+- `error` - Error message (if failed)
+
+**Example:**
+```javascript
+import { SarosStakeServices, genConnectionSolana } from '@saros-finance/sdk';
+import { PublicKey } from '@solana/web3.js';
+
+const connection = genConnectionSolana();
+const stakeService = new SarosStakeServices(connection);
+
+const result = await stakeService.stake(
+  'STAKE_ADDRESS',
+  1000000000, // 1000 tokens (9 decimals)
+  new PublicKey('USER_TOKEN_ACCOUNT'),
+  'USER_WALLET_ADDRESS'
+);
+
+if (result.success) {
+  console.log('Staked successfully!');
+  console.log('Unlock time:', new Date(result.unlockTime));
+}
+```
+
+#### `stakeService.unstake(stakeAddress, amount, tokenAccount, walletAddress)`
+
+Unstakes tokens from a staking pool.
+
+**Syntax:**
+```javascript
+const result = await stakeService.unstake(
+  stakeAddress,
+  amount,
+  tokenAccount,
+  walletAddress
+)
+```
+
+**Parameters:**
+- `stakeAddress` **(string)** - Target staking pool address
+- `amount` **(number)** - Amount to unstake
+- `tokenAccount` **(PublicKey)** - User's token account
+- `walletAddress` **(string)** - User wallet address
+
+**Returns:** `StakeResult`
+- `success` - Boolean indicating success/failure
+- `hash` - Transaction signature (if successful)
+- `rewardsEarned` - Rewards earned during staking
+- `error` - Error message (if failed)
+
+**Example:**
+```javascript
+const result = await stakeService.unstake(
+  'STAKE_ADDRESS',
+  500000000, // 500 tokens (9 decimals)
+  new PublicKey('USER_TOKEN_ACCOUNT'),
+  'USER_WALLET_ADDRESS'
+);
+
+if (result.success) {
+  console.log('Unstaked successfully!');
+  console.log('Rewards earned:', result.rewardsEarned);
+}
+```
 
 ---
 
 ## Utility Functions
 
-### convertBalanceToWei(value, decimals)
+### `convertBalanceToWei(balance, decimals)`
 
-Convert human-readable amount to blockchain units.
+Converts human-readable token amount to smallest units.
 
+**Syntax:**
 ```javascript
-const wei = convertBalanceToWei('100.5', 6)
+const weiAmount = convertBalanceToWei(balance, decimals)
 ```
 
 **Parameters:**
-- `value` (string|number) - Human-readable amount
-- `decimals` (number) - Token decimals
+- `balance` **(number)** - Human-readable amount
+- `decimals` **(number)** - Token decimal places
 
-**Returns:** `string` - Amount in smallest unit
+**Returns:** `number` - Amount in smallest units
 
 **Example:**
 ```javascript
-const usdcWei = convertBalanceToWei('100', 6);  // Returns '100000000'
-const solWei = convertBalanceToWei('1', 9);      // Returns '1000000000'
+import { convertBalanceToWei } from '@saros-finance/sdk';
+
+const usdcAmount = convertBalanceToWei(100, 6); // 100 USDC
+console.log('USDC in wei:', usdcAmount); // 100000000
 ```
 
 ---
 
-### convertWeiToBalance(value, decimals)
+### `convertWeiToBalance(weiAmount, decimals)`
 
-Convert blockchain units to human-readable amount.
+Converts smallest unit amount to human-readable format.
 
+**Syntax:**
 ```javascript
-const balance = convertWeiToBalance('100000000', 6)
+const balance = convertWeiToBalance(weiAmount, decimals)
 ```
 
 **Parameters:**
-- `value` (string) - Amount in smallest unit
-- `decimals` (number) - Token decimals
+- `weiAmount` **(number)** - Amount in smallest units
+- `decimals` **(number)** - Token decimal places
 
-**Returns:** `string` - Human-readable amount
+**Returns:** `number` - Human-readable amount
+
+**Example:**
+```javascript
+import { convertWeiToBalance } from '@saros-finance/sdk';
+
+const balance = convertWeiToBalance(100000000, 6); // USDC wei to balance
+console.log('USDC balance:', balance); // 100
+```
 
 ---
 
-### getInfoTokenByMint(mint, wallet)
+### `calculateAPR(rewards, principal, timeInSeconds)`
 
-Get token account info for a specific mint.
+Calculates Annual Percentage Rate.
 
+**Syntax:**
 ```javascript
-const tokenInfo = await getInfoTokenByMint(mintAddress, walletAddress)
+const apr = calculateAPR(rewards, principal, timeInSeconds)
 ```
 
 **Parameters:**
-- `mint` (string) - Token mint address
-- `wallet` (string) - Wallet address
+- `rewards` **(number)** - Rewards earned
+- `principal` **(number)** - Principal amount
+- `timeInSeconds` **(number)** - Time period in seconds
 
-**Returns:** `Object|null` - Token account info or null
+**Returns:** `number` - APR as percentage
+
+**Example:**
+```javascript
+import { calculateAPR } from '@saros-finance/sdk';
+
+const apr = calculateAPR(
+  100,      // 100 tokens earned
+  1000,     // 1000 tokens staked
+  2592000   // 30 days in seconds
+);
+
+console.log('APR:', apr.toFixed(2) + '%');
+```
 
 ---
 
-### getTokenAccountInfo(connection, address)
+### `validateAddress(address)`
 
-Get detailed token account information.
+Validates a Solana public key address.
 
+**Syntax:**
 ```javascript
-const accountInfo = await getTokenAccountInfo(connection, tokenAccount)
+const isValid = validateAddress(address)
 ```
 
-**Returns:** `Object`
-- `mint` (PublicKey) - Token mint
-- `owner` (PublicKey) - Account owner
-- `amount` (BN) - Token amount
-- `delegate` (PublicKey|null) - Delegate address
-- `isInitialized` (boolean) - Account status
+**Parameters:**
+- `address` **(string)** - Address to validate
+
+**Returns:** `boolean` - True if valid, false otherwise
+
+**Example:**
+```javascript
+import { validateAddress } from '@saros-finance/sdk';
+
+const address = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
+const isValid = validateAddress(address);
+console.log('Valid address:', isValid); // true
+```
 
 ---
 
-### getTokenMintInfo(connection, address)
+### `getAccountBalance(connection, address)`
 
-Get token mint information.
+Gets account balance for any token account.
 
+**Syntax:**
 ```javascript
-const mintInfo = await getTokenMintInfo(connection, mintAddress)
+const balance = await getAccountBalance(connection, address)
 ```
 
-**Returns:** `Object`
-- `supply` (BN) - Total supply
-- `decimals` (number) - Token decimals
-- `isInitialized` (boolean) - Mint status
-- `mintAuthority` (PublicKey|null) - Mint authority
+**Parameters:**
+- `connection` **(Connection)** - Solana connection object
+- `address` **(string)** - Token account address
+
+**Returns:** `AccountBalance`
+- `amount` - Balance amount
+- `decimals` - Token decimals
+- `uiAmount` - Human-readable amount
+
+**Example:**
+```javascript
+import { getAccountBalance, genConnectionSolana } from '@saros-finance/sdk';
+
+const connection = genConnectionSolana();
+const balance = await getAccountBalance(connection, 'TOKEN_ACCOUNT_ADDRESS');
+
+console.log('Balance:', balance.uiAmount);
+console.log('Raw amount:', balance.amount);
+```
 
 ---
 
 ## Type Definitions
 
-### PoolParams
+### `Connection`
 ```typescript
-interface PoolParams {
-  address: string;
-  tokens: {
-    [mintAddress: string]: {
-      id: string;
-      mintAddress: string;
-      symbol: string;
-      name: string;
-      icon: string;
-      decimals: string;
-      addressSPL?: string;
-    }
-  };
-  tokenIds: string[];
+interface Connection {
+  rpcEndpoint: string;
+  commitment: Commitment;
+  getAccountInfo: (publicKey: PublicKey) => Promise<AccountInfo>;
+  getBalance: (publicKey: PublicKey) => Promise<number>;
+  // ... other Solana web3 connection methods
 }
 ```
 
-### FarmParams
+### `SwapQuote`
 ```typescript
-interface FarmParams {
-  lpAddress: string;
-  poolAddress: string;
-  poolLpAddress: string;
-  rewards: Array<{
-    address: string;
-    poolRewardAddress: string;
-    rewardPerBlock: number;
-    rewardTokenAccount: string;
-    id: string;
-  }>;
-  token0: string;
-  token1: string;
-  token0Id: string;
-  token1Id: string;
-  startBlock?: number;
-  endBlock?: number;
+interface SwapQuote {
+  amountIn: number;           // Input amount in smallest units
+  amountOut: number;          // Expected output amount
+  amountOutWithSlippage: number; // Minimum output after slippage
+  priceImpact: number;        // Price impact percentage
+  fee: number;                // Trading fee amount
+  route?: string[];           // Swap route (for multi-hop)
 }
 ```
 
-### SwapResult
+### `SwapResult`
 ```typescript
 interface SwapResult {
-  isError: boolean;
-  mess?: string;
-  hash?: string;
+  isError: boolean;           // Success/failure indicator
+  hash?: string;              // Transaction signature
+  mess?: string;              // Error message
 }
 ```
 
-### SwapEstimate
+### `PoolInfo`
 ```typescript
-interface SwapEstimate {
-  amountOut: number;
-  amountOutWithSlippage: number;
-  priceImpact: number;
-  rate: number;
+interface PoolInfo {
+  tokenA: {
+    mint: string;
+    symbol: string;
+    decimals: number;
+    reserve: number;
+  };
+  tokenB: {
+    mint: string;
+    symbol: string;
+    decimals: number;
+    reserve: number;
+  };
+  totalSupply: number;        // Total LP token supply
+  fee: number;                // Trading fee percentage
 }
 ```
 
-## Error Handling
+### `LiquidityResult`
+```typescript
+interface LiquidityResult {
+  isError: boolean;           // Success/failure indicator
+  hash?: string;              // Transaction signature
+  lpAmount?: number;          // LP tokens received/burned
+  amountA?: number;           // Token A amount
+  amountB?: number;           // Token B amount
+  mess?: string;              // Error message
+}
+```
 
-### Common Error Messages
+### `FarmInfo`
+```typescript
+interface FarmInfo {
+  stakingToken: {
+    mint: string;
+    symbol: string;
+    decimals: number;
+  };
+  rewardToken: {
+    mint: string;
+    symbol: string;
+    decimals: number;
+  };
+  apr: number;                // Annual percentage rate
+  totalStaked: number;        // Total amount staked
+  userStaked: number;         // User's staked amount
+  pendingRewards: number;     // User's pending rewards
+}
+```
+
+### `FarmResult`
+```typescript
+interface FarmResult {
+  success: boolean;           // Success/failure indicator
+  hash?: string;              // Transaction signature
+  rewardsEarned?: number;     // Rewards earned/claimed
+  rewardsClaimed?: number;    // Specific rewards claimed
+  error?: string;             // Error message
+}
+```
+
+### `StakeInfo`
+```typescript
+interface StakeInfo {
+  stakingToken: {
+    mint: string;
+    symbol: string;
+    decimals: number;
+  };
+  apr: number;                // Annual percentage rate
+  totalStaked: number;        // Total amount staked
+  lockPeriod: number;         // Lock period in seconds
+  minStake: number;           // Minimum stake amount
+}
+```
+
+### `StakeResult`
+```typescript
+interface StakeResult {
+  success: boolean;           // Success/failure indicator
+  hash?: string;              // Transaction signature
+  unlockTime?: number;        // Unlock timestamp
+  rewardsEarned?: number;     // Rewards earned
+  error?: string;             // Error message
+}
+```
+
+### `TokenInfo`
+```typescript
+interface TokenInfo {
+  symbol: string;             // Token symbol
+  name: string;               // Token name
+  decimals: number;           // Decimal places
+  supply: number;             // Total supply
+  mint: string;               // Mint address
+}
+```
+
+### `AccountBalance`
+```typescript
+interface AccountBalance {
+  amount: string;             // Raw amount as string
+  decimals: number;           // Token decimals
+  uiAmount: number;           // Human-readable amount
+  uiAmountString: string;     // Human-readable amount as string
+}
+```
+
+### `PoolParams`
+```typescript
+interface PoolParams {
+  address: string;            // Pool address
+  tokens: {
+    [mint: string]: {
+      decimals: number;
+      symbol: string;
+    };
+  };
+  tokenIds: string[];         // Array of token mints
+}
+```
+
+### `RouteInfo`
+```typescript
+interface RouteInfo {
+  poolAddress: string;        // Pool address for this hop
+  fromMint: string;           // Input token mint
+  toMint: string;             // Output token mint
+  percentage?: number;        // Percentage of total for this route
+}
+```
+
+---
+
+## Error Codes
+
+Common error codes and their meanings:
 
 | Error Code | Description | Solution |
 |------------|-------------|----------|
-| `gasSolNotEnough` | Insufficient SOL for transaction fees | Add SOL to wallet |
-| `tradeErrFund` | Insufficient token balance | Check token balance |
-| `sizeTooSmall` | Trade amount below minimum | Increase trade size |
-| `exceedsLimit` | Trade exceeds pool liquidity | Reduce trade size or use multi-hop |
-| `tooLarge` | Transaction size exceeds limit | Split into multiple transactions |
-| `txsFail` | Generic transaction failure | Check logs for details |
+| `gasSolNotEnough` | Insufficient SOL for fees | Add more SOL to wallet |
+| `exceedsLimit` | Amount exceeds pool limit | Use smaller amount |
+| `sizeTooSmall` | Amount below minimum | Increase amount |
+| `poolNotFound` | Pool doesn't exist | Check pool address |
+| `insufficientBalance` | Not enough tokens | Check token balance |
+| `slippageExceeded` | Price moved too much | Increase slippage tolerance |
+| `txsFail` | Transaction failed | Retry transaction |
+| `tokenAccountNotFound` | Token account missing | Create token account |
 
-### Error Handling Pattern
+---
 
+## Best Practices
+
+### Error Handling
 ```javascript
 try {
-  const result = await swapSaros(/* params */);
+  const result = await swapSaros(/* parameters */);
   
   if (result.isError) {
-    switch(result.mess) {
+    switch (result.mess) {
       case 'gasSolNotEnough':
-        // Handle insufficient SOL
+        console.error('Need more SOL for fees');
         break;
       case 'exceedsLimit':
-        // Handle liquidity issues
+        console.error('Amount too large for pool');
         break;
       default:
-        // Handle generic error
+        console.error('Swap failed:', result.mess);
     }
-  } else {
-    // Success
-    console.log(`Transaction: ${result.hash}`);
+    return;
   }
+  
+  console.log('Success!', result.hash);
 } catch (error) {
-  // Handle unexpected errors
   console.error('Unexpected error:', error);
 }
 ```
 
-## Constants
-
-### Program IDs
+### Connection Management
 ```javascript
-const TOKEN_PROGRAM_ID = new PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA');
-const SAROS_SWAP_PROGRAM_ADDRESS_V1 = new PublicKey('SSwapUtytfBdBn1b9NUGG6foMVPtcWgpRU32HToDUZr');
-const SAROS_FARM_ADDRESS = new PublicKey('SFarmWM5wLFNEw1q5ofqL7CrwBMwdcqQgK6oQuoBGZJ');
-const ASSOCIATED_TOKEN_ACCOUNT_PROGRAM_ID = new PublicKey('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL');
+// Reuse connection instances
+const connection = genConnectionSolana();
+
+// Use connection for multiple operations
+const tokenInfo = await getInfoTokenByMint(connection, mintAddress);
+const quote = await getSwapAmountSaros(connection, /* other params */);
 ```
 
-### Common Token Mints
+### Amount Handling
 ```javascript
-const USDC_MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
-const USDT_MINT = 'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB';
-const SOL_MINT = 'So11111111111111111111111111111111111111112';
+// Always convert to proper decimals
+const userInput = 100; // User enters 100 USDC
+const decimals = 6;    // USDC has 6 decimals
+const amountInWei = convertBalanceToWei(userInput, decimals);
+
+// Use wei amount in SDK calls
+const quote = await getSwapAmountSaros(/* ..., */ amountInWei, /* ... */);
+
+// Convert back for display
+const outputAmount = convertWeiToBalance(quote.amountOut, outputDecimals);
 ```
 
-## Best Practices
-
-1. **Always use try-catch** blocks for async operations
-2. **Check transaction results** before proceeding
-3. **Validate user inputs** before blockchain calls
-4. **Cache pool data** when possible
-5. **Use appropriate slippage** (0.5-1% for stable, 2-5% for volatile)
-6. **Monitor gas costs** and maintain SOL balance
-7. **Implement retry logic** for failed transactions
-8. **Log all transactions** for debugging
+---
 
 ## Support
 
-- GitHub: [github.com/coin98/saros-sdk](https://github.com/coin98/saros-sdk)
-- NPM: [@saros-finance/sdk](https://www.npmjs.com/package/@saros-finance/sdk)
-- Issues: [GitHub Issues](https://github.com/coin98/saros-sdk/issues)
+- **GitHub**: [Saros SDK Repository](https://github.com/coin98/saros-sdk)
+- **Documentation**: [docs.saros.finance](https://docs.saros.finance)
+- **Discord**: [Community Support](https://discord.gg/saros)
+- **Email**: support@coin98.com
+
+---
+
+**Last Updated**: November 2024  
+**SDK Version**: 2.4.0

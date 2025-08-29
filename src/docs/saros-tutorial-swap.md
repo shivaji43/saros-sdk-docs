@@ -2,14 +2,19 @@
 
 This tutorial walks you through building a complete token swap interface using the Saros SDK. By the end, you'll have a production-ready swap implementation with price quotes, slippage protection, and multi-hop routing.
 
+---
+
 ## What We're Building
 
 A swap module that:
+
 - Gets real-time price quotes
 - Handles direct and routed swaps
 - Manages slippage and price impact
 - Provides user-friendly error messages
 - Supports SOL wrapping/unwrapping
+
+---
 
 ## Step 1: Setting Up the Swap Service
 
@@ -28,514 +33,785 @@ import {
 import { PublicKey } from '@solana/web3.js';
 
 class SarosSwapService {
-  constructor(walletAddress) {
-    this.connection = genConnectionSolana();
+  constructor(connection, walletAddress) {
+    this.connection = connection || genConnectionSolana();
     this.walletAddress = walletAddress;
-    this.SAROS_PROGRAM = new PublicKey('SSwapUtytfBdBn1b9NUGG6foMVPtcWgpRU32HToDUZr');
+    this.supportedPools = new Map();
+    this.tokenCache = new Map();
   }
 
-  /**
-   * Get swap quote with all necessary details
-   */
-  async getQuote(fromMint, toMint, amount, poolParams) {
+  // Initialize pools and token information
+  async initialize() {
     try {
-      // Input validation
-      if (amount <= 0) {
-        throw new Error('Amount must be greater than 0');
-      }
-
-      // Get the swap estimate
-      const estimate = await getSwapAmountSaros(
-        this.connection,
-        fromMint,
-        toMint,
-        amount,
-        0.5, // Default 0.5% slippage
-        poolParams
-      );
-
-      // Calculate additional metrics
-      const minimumReceived = estimate.amountOutWithSlippage;
-      const exchangeRate = estimate.amountOut / amount;
-      const priceImpact = estimate.priceImpact;
-      
-      // Determine if price impact is acceptable
-      const impactSeverity = this.assessPriceImpact(priceImpact);
-
-      return {
-        success: true,
-        data: {
-          inputAmount: amount,
-          outputAmount: estimate.amountOut,
-          minimumReceived,
-          exchangeRate,
-          priceImpact,
-          impactSeverity,
-          route: 'direct', // or 'routed' for multi-hop
-          estimatedFee: 0.00025 // Approximate SOL fee
-        }
-      };
+      await this.loadSupportedPools();
+      await this.loadTokenInfo();
+      console.log('Swap service initialized successfully');
+      return true;
     } catch (error) {
-      return {
-        success: false,
-        error: `Failed to get quote: ${error.message}`
-      };
+      console.error('Failed to initialize swap service:', error);
+      return false;
     }
   }
 
-  /**
-   * Assess price impact severity
-   */
-  assessPriceImpact(impact) {
-    if (impact < 1) return 'low';
-    if (impact < 3) return 'medium';
-    if (impact < 5) return 'high';
-    return 'severe';
+  async loadSupportedPools() {
+    // Load popular pools
+    this.supportedPools.set('USDC-C98', {
+      address: '2wUvdZA8ZsY714Y5wUL9fkFmupJGGwzui2N74zqJWgty',
+      tokenA: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v', // USDC
+      tokenB: 'C98A4nkJXhpVZNAZdHUA95RpTF3T4whtQubL3YobiUX9', // C98
+      fee: 0.003, // 0.3%
+      active: true
+    });
+
+    this.supportedPools.set('SOL-USDC', {
+      address: '8k7F9Xb36oFJsjpCKpsXvg4cgBRoZtwNTc3EzG5Ttd2o',
+      tokenA: 'So11111111111111111111111111111111111111112', // SOL
+      tokenB: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v', // USDC
+      fee: 0.003,
+      active: true
+    });
   }
 
-  /**
-   * Execute the swap
-   */
-  async executeSwap(swapParams) {
-    const {
-      fromMint,
-      toMint,
-      amount,
-      minAmountOut,
-      poolAddress,
-      fromTokenAccount,
-      toTokenAccount
-    } = swapParams;
+  async loadTokenInfo() {
+    const commonTokens = [
+      'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v', // USDC
+      'C98A4nkJXhpVZNAZdHUA95RpTF3T4whtQubL3YobiUX9', // C98
+      'So11111111111111111111111111111111111111112'  // SOL
+    ];
 
-    // Pre-flight checks
-    const checks = await this.performPreflightChecks(fromMint, amount);
-    if (!checks.success) {
-      return checks;
+    for (const mint of commonTokens) {
+      try {
+        const info = await getInfoTokenByMint(this.connection, mint);
+        this.tokenCache.set(mint, info);
+      } catch (error) {
+        console.warn(`Failed to load token info for ${mint}:`, error);
+      }
     }
-
-    // Execute swap
-    const result = await swapSaros(
-      this.connection,
-      fromTokenAccount,
-      toTokenAccount,
-      amount,
-      minAmountOut,
-      null, // No host fees
-      poolAddress,
-      this.SAROS_PROGRAM,
-      this.walletAddress,
-      fromMint,
-      toMint
-    );
-
-    if (result.isError) {
-      return {
-        success: false,
-        error: this.translateError(result.mess)
-      };
-    }
-
-    return {
-      success: true,
-      transactionId: result.hash,
-      explorerUrl: `https://solscan.io/tx/${result.hash}`
-    };
-  }
-
-  /**
-   * Perform pre-flight checks
-   */
-  async performPreflightChecks(tokenMint, amount) {
-    // Check SOL balance for fees
-    const solBalance = await this.connection.getBalance(
-      new PublicKey(this.walletAddress)
-    );
-    
-    if (solBalance < 0.01 * 1e9) {
-      return {
-        success: false,
-        error: 'Insufficient SOL for transaction fees (need at least 0.01 SOL)'
-      };
-    }
-
-    // Check token balance
-    const tokenInfo = await getInfoTokenByMint(tokenMint, this.walletAddress);
-    if (!tokenInfo) {
-      return {
-        success: false,
-        error: 'Token account not found. Initialize it first.'
-      };
-    }
-
-    const tokenBalance = convertWeiToBalance(
-      tokenInfo.account.data.parsed.info.tokenAmount.amount,
-      tokenInfo.account.data.parsed.info.tokenAmount.decimals
-    );
-
-    if (tokenBalance < amount) {
-      return {
-        success: false,
-        error: `Insufficient token balance. Have: ${tokenBalance}, Need: ${amount}`
-      };
-    }
-
-    return { success: true };
-  }
-
-  /**
-   * Translate error codes to user-friendly messages
-   */
-  translateError(errorCode) {
-    const errorMessages = {
-      'gasSolNotEnough': 'Insufficient SOL for transaction fees',
-      'tradeErrFund': 'Insufficient token balance',
-      'sizeTooSmall': 'Swap amount is too small',
-      'exceedsLimit': 'Swap amount exceeds pool liquidity',
-      'tooLarge': 'Transaction size exceeds limit',
-      'txsFail': 'Transaction failed. Please try again'
-    };
-
-    return errorMessages[errorCode] || `Transaction failed: ${errorCode}`;
   }
 }
 
 export default SarosSwapService;
 ```
 
-## Step 2: Building the Swap Interface
+---
 
-Now let's create a user-facing swap interface:
+## Step 2: Price Quote System
+
+Add comprehensive price quoting functionality:
 
 ```javascript
-// SwapInterface.js
-import SarosSwapService from './swapService';
-import { getPoolInfo } from '@saros-finance/sdk';
+// Add to SarosSwapService class
 
-class SwapInterface {
-  constructor(walletAddress) {
-    this.swapService = new SarosSwapService(walletAddress);
-    this.currentQuote = null;
-    this.slippageTolerance = 0.5; // Default 0.5%
-  }
-
-  /**
-   * Set custom slippage tolerance
-   */
-  setSlippage(percentage) {
-    if (percentage < 0.1 || percentage > 50) {
-      throw new Error('Slippage must be between 0.1% and 50%');
+async getSwapQuote(fromMint, toMint, amount, slippageTolerance = 0.5) {
+  try {
+    // Validate inputs
+    if (!fromMint || !toMint || !amount || amount <= 0) {
+      throw new Error('Invalid swap parameters');
     }
-    this.slippageTolerance = percentage;
-  }
 
-  /**
-   * Get available pools for a token pair
-   */
-  async findAvailablePools(token0Mint, token1Mint) {
-    // In production, you'd query this from an API or indexer
-    const pools = [
-      {
-        address: '2wUvdZA8ZsY714Y5wUL9fkFmupJGGwzui2N74zqJWgty',
-        token0: 'C98A4nkJXhpVZNAZdHUA95RpTF3T4whtQubL3YobiUX9',
-        token1: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
-        liquidity: 1000000 // USD value
-      }
-    ];
-
-    // Filter pools that match our token pair
-    return pools.filter(pool => 
-      (pool.token0 === token0Mint && pool.token1 === token1Mint) ||
-      (pool.token0 === token1Mint && pool.token1 === token0Mint)
-    );
-  }
-
-  /**
-   * Get best quote across all available pools
-   */
-  async getBestQuote(fromMint, toMint, amount) {
-    const pools = await this.findAvailablePools(fromMint, toMint);
+    // Find direct pool
+    const directPool = this.findDirectPool(fromMint, toMint);
     
-    if (pools.length === 0) {
-      // Try finding a route through intermediate token
-      return this.findRouteQuote(fromMint, toMint, amount);
+    if (directPool) {
+      return await this.getDirectSwapQuote(fromMint, toMint, amount, slippageTolerance, directPool);
     }
 
-    // Get quotes from all pools
-    const quotes = await Promise.all(
-      pools.map(pool => 
-        this.swapService.getQuote(fromMint, toMint, amount, {
-          address: pool.address,
-          tokens: {
-            [pool.token0]: { /* token info */ },
-            [pool.token1]: { /* token info */ }
-          },
-          tokenIds: [pool.token0, pool.token1]
-        })
-      )
-    );
+    // Try routed swap through USDC
+    return await this.getRoutedSwapQuote(fromMint, toMint, amount, slippageTolerance);
+    
+  } catch (error) {
+    console.error('Error getting swap quote:', error);
+    return {
+      success: false,
+      error: error.message,
+      fromAmount: amount,
+      fromMint,
+      toMint
+    };
+  }
+}
 
-    // Find best quote (highest output)
-    const validQuotes = quotes.filter(q => q.success);
-    if (validQuotes.length === 0) {
-      return { success: false, error: 'No valid quotes available' };
-    }
-
-    const bestQuote = validQuotes.reduce((best, current) => 
-      current.data.outputAmount > best.data.outputAmount ? current : best
-    );
-
-    this.currentQuote = bestQuote;
-    return bestQuote;
+async getDirectSwapQuote(fromMint, toMint, amount, slippageTolerance, pool) {
+  const fromToken = this.tokenCache.get(fromMint);
+  const toToken = this.tokenCache.get(toMint);
+  
+  if (!fromToken || !toToken) {
+    throw new Error('Token information not available');
   }
 
-  /**
-   * Find route through intermediate token (2-hop swap)
-   */
-  async findRouteQuote(fromMint, toMint, amount) {
-    // Common routing tokens (USDC, SOL, etc.)
-    const routingTokens = [
-      'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v', // USDC
-      'So11111111111111111111111111111111111111112' // SOL
-    ];
+  // Convert amount to token decimals
+  const amountInWei = convertBalanceToWei(amount, fromToken.decimals);
 
-    for (const middleToken of routingTokens) {
-      // Skip if middle token is same as from or to
-      if (middleToken === fromMint || middleToken === toMint) continue;
+  // Get quote from Saros
+  const quote = await getSwapAmountSaros(
+    this.connection,
+    fromMint,
+    toMint,
+    amountInWei,
+    slippageTolerance,
+    {
+      poolAddress: pool.address,
+      fee: pool.fee
+    }
+  );
 
-      const pool1 = await this.findAvailablePools(fromMint, middleToken);
-      const pool2 = await this.findAvailablePools(middleToken, toMint);
+  // Calculate price impact
+  const priceImpact = this.calculatePriceImpact(amount, quote.amountOut, pool);
 
-      if (pool1.length > 0 && pool2.length > 0) {
-        // Calculate routed quote
-        // This is simplified - in production, calculate exact amounts
-        return {
-          success: true,
-          data: {
-            route: 'routed',
-            path: [fromMint, middleToken, toMint],
-            pools: [pool1[0].address, pool2[0].address],
-            // ... other quote details
-          }
-        };
-      }
+  return {
+    success: true,
+    route: 'direct',
+    pool: pool.address,
+    fromAmount: amount,
+    toAmount: convertWeiToBalance(quote.amountOut, toToken.decimals),
+    toAmountMin: convertWeiToBalance(quote.amountOutWithSlippage, toToken.decimals),
+    priceImpact,
+    fee: pool.fee,
+    slippage: slippageTolerance,
+    quote
+  };
+}
+
+async getRoutedSwapQuote(fromMint, toMint, amount, slippageTolerance) {
+  const USDC_MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
+  
+  // Route: fromToken -> USDC -> toToken
+  const step1Pool = this.findDirectPool(fromMint, USDC_MINT);
+  const step2Pool = this.findDirectPool(USDC_MINT, toMint);
+
+  if (!step1Pool || !step2Pool) {
+    throw new Error('No routing path available');
+  }
+
+  // Get quote for first hop
+  const quote1 = await this.getDirectSwapQuote(fromMint, USDC_MINT, amount, slippageTolerance, step1Pool);
+  
+  if (!quote1.success) {
+    throw new Error('Failed to get quote for first hop');
+  }
+
+  // Get quote for second hop
+  const quote2 = await this.getDirectSwapQuote(USDC_MINT, toMint, quote1.toAmount, slippageTolerance, step2Pool);
+  
+  if (!quote2.success) {
+    throw new Error('Failed to get quote for second hop');
+  }
+
+  return {
+    success: true,
+    route: 'routed',
+    hops: [step1Pool.address, step2Pool.address],
+    fromAmount: amount,
+    toAmount: quote2.toAmount,
+    toAmountMin: quote2.toAmountMin,
+    priceImpact: quote1.priceImpact + quote2.priceImpact,
+    fee: step1Pool.fee + step2Pool.fee,
+    slippage: slippageTolerance,
+    quotes: [quote1, quote2]
+  };
+}
+
+findDirectPool(tokenA, tokenB) {
+  for (const [name, pool] of this.supportedPools) {
+    if ((pool.tokenA === tokenA && pool.tokenB === tokenB) ||
+        (pool.tokenA === tokenB && pool.tokenB === tokenA)) {
+      return pool;
+    }
+  }
+  return null;
+}
+
+calculatePriceImpact(amountIn, amountOut, pool) {
+  // Simplified price impact calculation
+  // In production, you'd want more sophisticated calculation
+  const tradeSize = amountIn;
+  
+  if (tradeSize < 1000) return 0.1;
+  if (tradeSize < 10000) return 0.3;
+  if (tradeSize < 100000) return 0.8;
+  return 1.5; // High impact for large trades
+}
+```
+
+---
+
+## Step 3: Executing Swaps
+
+Implement the swap execution logic:
+
+```javascript
+// Add to SarosSwapService class
+
+async executeSwap(quote, userAccounts) {
+  try {
+    // Validate quote and accounts
+    this.validateSwapInputs(quote, userAccounts);
+
+    if (quote.route === 'direct') {
+      return await this.executeDirectSwap(quote, userAccounts);
+    } else if (quote.route === 'routed') {
+      return await this.executeRoutedSwap(quote, userAccounts);
+    }
+
+    throw new Error('Invalid swap route');
+
+  } catch (error) {
+    console.error('Swap execution failed:', error);
+    return {
+      success: false,
+      error: error.message,
+      details: error
+    };
+  }
+}
+
+async executeDirectSwap(quote, userAccounts) {
+  const { fromAccount, toAccount } = userAccounts;
+  
+  const result = await swapSaros(
+    this.connection,
+    fromAccount,
+    toAccount,
+    quote.quote.amountIn,
+    quote.quote.amountOutWithSlippage,
+    null, // Additional parameters
+    new PublicKey(quote.pool),
+    'SSwapUtytfBdBn1b9NUGG6foMVPtcWgpRU32HToDUZr', // Program ID
+    this.walletAddress,
+    quote.fromMint || quote.quote.fromMint,
+    quote.toMint || quote.quote.toMint
+  );
+
+  if (result.isError) {
+    throw new Error(`Swap failed: ${result.mess || result.message}`);
+  }
+
+  return {
+    success: true,
+    signature: result.hash,
+    route: 'direct',
+    fromAmount: quote.fromAmount,
+    toAmount: quote.toAmount,
+    actualToAmount: await this.getActualReceived(result.hash, quote.toMint)
+  };
+}
+
+async executeRoutedSwap(quote, userAccounts) {
+  // For routed swaps, we need to execute two transactions
+  const { fromAccount, intermediateAccount, toAccount } = userAccounts;
+  
+  try {
+    // Execute first hop
+    const hop1Result = await this.executeDirectSwap(quote.quotes[0], {
+      fromAccount,
+      toAccount: intermediateAccount
+    });
+
+    if (!hop1Result.success) {
+      throw new Error('First hop failed');
+    }
+
+    // Wait for first transaction to be confirmed
+    await this.waitForConfirmation(hop1Result.signature);
+
+    // Execute second hop
+    const hop2Result = await this.executeDirectSwap(quote.quotes[1], {
+      fromAccount: intermediateAccount,
+      toAccount
+    });
+
+    if (!hop2Result.success) {
+      throw new Error('Second hop failed');
     }
 
     return {
-      success: false,
-      error: 'No swap route found'
+      success: true,
+      signatures: [hop1Result.signature, hop2Result.signature],
+      route: 'routed',
+      fromAmount: quote.fromAmount,
+      toAmount: quote.toAmount,
+      actualToAmount: hop2Result.actualToAmount
+    };
+
+  } catch (error) {
+    // If second hop fails, user has intermediate tokens
+    console.error('Routed swap partially failed:', error);
+    throw error;
+  }
+}
+
+validateSwapInputs(quote, userAccounts) {
+  if (!quote || !quote.success) {
+    throw new Error('Invalid quote');
+  }
+
+  if (!userAccounts || !userAccounts.fromAccount || !userAccounts.toAccount) {
+    throw new Error('Missing user accounts');
+  }
+
+  if (quote.route === 'routed' && !userAccounts.intermediateAccount) {
+    throw new Error('Intermediate account required for routed swaps');
+  }
+}
+
+async waitForConfirmation(signature, maxRetries = 30) {
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      const status = await this.connection.getSignatureStatus(signature);
+      if (status.value && status.value.confirmationStatus === 'confirmed') {
+        return true;
+      }
+    } catch (error) {
+      console.warn('Error checking transaction status:', error);
+    }
+    
+    await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second
+  }
+  
+  throw new Error('Transaction confirmation timeout');
+}
+
+async getActualReceived(signature, tokenMint) {
+  // Parse transaction logs to get actual amount received
+  // This is a simplified version - in production you'd parse logs more carefully
+  try {
+    const transaction = await this.connection.getTransaction(signature, {
+      commitment: 'confirmed',
+      maxSupportedTransactionVersion: 0
+    });
+    
+    // Extract actual amount from transaction data
+    // Implementation depends on your specific needs
+    return null;
+  } catch (error) {
+    console.warn('Could not get actual received amount:', error);
+    return null;
+  }
+}
+```
+
+---
+
+## Step 4: Error Handling & Recovery
+
+Add comprehensive error handling:
+
+```javascript
+// Add to SarosSwapService class
+
+handleSwapError(error, quote) {
+  const errorMappings = {
+    'gasSolNotEnough': {
+      userMessage: 'Insufficient SOL for transaction fees',
+      suggestedAction: 'Add more SOL to your wallet',
+      canRetry: true
+    },
+    'exceedsLimit': {
+      userMessage: 'Swap amount too large for pool liquidity',
+      suggestedAction: 'Try a smaller amount or different route',
+      canRetry: true
+    },
+    'sizeTooSmall': {
+      userMessage: 'Swap amount too small',
+      suggestedAction: 'Increase the swap amount',
+      canRetry: true
+    },
+    'slippageExceeded': {
+      userMessage: 'Price moved beyond acceptable range',
+      suggestedAction: 'Increase slippage tolerance or try again',
+      canRetry: true
+    },
+    'poolNotFound': {
+      userMessage: 'Trading pair not available',
+      suggestedAction: 'Try a different token pair',
+      canRetry: false
+    },
+    'insufficientBalance': {
+      userMessage: 'Insufficient token balance',
+      suggestedAction: 'Check your wallet balance',
+      canRetry: false
+    }
+  };
+
+  const errorKey = this.categorizeError(error);
+  const errorInfo = errorMappings[errorKey] || {
+    userMessage: 'An unexpected error occurred',
+    suggestedAction: 'Please try again later',
+    canRetry: true
+  };
+
+  return {
+    ...errorInfo,
+    originalError: error.message,
+    quote,
+    timestamp: new Date().toISOString()
+  };
+}
+
+categorizeError(error) {
+  const message = error.message?.toLowerCase() || '';
+  
+  if (message.includes('insufficient') && message.includes('sol')) return 'gasSolNotEnough';
+  if (message.includes('exceeds') || message.includes('limit')) return 'exceedsLimit';
+  if (message.includes('too small') || message.includes('minimum')) return 'sizeTooSmall';
+  if (message.includes('slippage')) return 'slippageExceeded';
+  if (message.includes('pool') && message.includes('not found')) return 'poolNotFound';
+  if (message.includes('insufficient') && message.includes('balance')) return 'insufficientBalance';
+  
+  return 'unknown';
+}
+
+async retrySwap(quote, userAccounts, maxRetries = 3) {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      console.log(`Swap attempt ${attempt} of ${maxRetries}`);
+      
+      // Get fresh quote for retry
+      const freshQuote = await this.getSwapQuote(
+        quote.fromMint,
+        quote.toMint,
+        quote.fromAmount,
+        quote.slippage
+      );
+
+      if (!freshQuote.success) {
+        throw new Error('Failed to get fresh quote');
+      }
+
+      // Execute with fresh quote
+      const result = await this.executeSwap(freshQuote, userAccounts);
+      
+      if (result.success) {
+        console.log(`Swap succeeded on attempt ${attempt}`);
+        return result;
+      }
+
+    } catch (error) {
+      console.warn(`Attempt ${attempt} failed:`, error.message);
+      
+      const errorInfo = this.handleSwapError(error, quote);
+      
+      if (!errorInfo.canRetry || attempt === maxRetries) {
+        throw error;
+      }
+
+      // Wait before retry (exponential backoff)
+      const delay = Math.pow(2, attempt) * 1000;
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+  }
+}
+```
+
+---
+
+## Step 5: Usage Examples
+
+Here's how to use the complete swap service:
+
+### Basic Swap
+
+```javascript
+import SarosSwapService from './swapService.js';
+
+async function performBasicSwap() {
+  const swapService = new SarosSwapService(connection, walletAddress);
+  
+  // Initialize the service
+  await swapService.initialize();
+
+  // Get a quote
+  const quote = await swapService.getSwapQuote(
+    'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v', // USDC
+    'C98A4nkJXhpVZNAZdHUA95RpTF3T4whtQubL3YobiUX9', // C98
+    100, // 100 USDC
+    0.5  // 0.5% slippage
+  );
+
+  if (!quote.success) {
+    console.error('Quote failed:', quote.error);
+    return;
+  }
+
+  console.log(`Quote: ${quote.fromAmount} USDC → ${quote.toAmount} C98`);
+  console.log(`Price impact: ${quote.priceImpact}%`);
+  console.log(`Route: ${quote.route}`);
+
+  // Execute the swap
+  const userAccounts = {
+    fromAccount: 'USER_USDC_ACCOUNT',
+    toAccount: 'USER_C98_ACCOUNT'
+  };
+
+  const result = await swapService.executeSwap(quote, userAccounts);
+
+  if (result.success) {
+    console.log('Swap successful!');
+    console.log(`Transaction: ${result.signature}`);
+    console.log(`Received: ${result.actualToAmount || result.toAmount} C98`);
+  } else {
+    console.error('Swap failed:', result.error);
+  }
+}
+```
+
+### Swap with Error Handling
+
+```javascript
+async function performSwapWithErrorHandling() {
+  const swapService = new SarosSwapService(connection, walletAddress);
+  await swapService.initialize();
+
+  try {
+    const quote = await swapService.getSwapQuote(
+      'So11111111111111111111111111111111111111112', // SOL
+      'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v', // USDC
+      1.5, // 1.5 SOL
+      1.0  // 1% slippage
+    );
+
+    if (!quote.success) {
+      throw new Error(quote.error);
+    }
+
+    const userAccounts = {
+      fromAccount: 'USER_SOL_ACCOUNT',
+      toAccount: 'USER_USDC_ACCOUNT'
+    };
+
+    // Try swap with automatic retry
+    const result = await swapService.retrySwap(quote, userAccounts);
+    
+    console.log('Swap completed successfully!');
+    return result;
+
+  } catch (error) {
+    const errorInfo = swapService.handleSwapError(error, quote);
+    
+    console.error('Swap Error:', errorInfo.userMessage);
+    console.error('Suggested Action:', errorInfo.suggestedAction);
+    
+    if (errorInfo.canRetry) {
+      console.log('You can try again with different parameters');
+    }
+    
+    throw error;
+  }
+}
+```
+
+### Price Monitoring
+
+```javascript
+async function monitorPrice(fromMint, toMint, amount) {
+  const swapService = new SarosSwapService();
+  await swapService.initialize();
+
+  console.log(`Monitoring price for ${amount} tokens...`);
+
+  setInterval(async () => {
+    try {
+      const quote = await swapService.getSwapQuote(fromMint, toMint, amount, 0.5);
+      
+      if (quote.success) {
+        const rate = quote.toAmount / quote.fromAmount;
+        console.log(`Current rate: 1 → ${rate.toFixed(6)} (Impact: ${quote.priceImpact}%)`);
+      }
+    } catch (error) {
+      console.error('Price check failed:', error.message);
+    }
+  }, 10000); // Check every 10 seconds
+}
+```
+
+---
+
+## Advanced Features
+
+### Dynamic Slippage Calculation
+
+```javascript
+function calculateOptimalSlippage(tokenPair, amount, volatility) {
+  let baseSlippage = 0.5; // 0.5%
+  
+  // Adjust for token volatility
+  if (volatility > 0.1) baseSlippage += 0.5; // High volatility
+  if (volatility > 0.2) baseSlippage += 1.0; // Very high volatility
+  
+  // Adjust for trade size
+  if (amount > 10000) baseSlippage += 0.3; // Large trade
+  if (amount > 100000) baseSlippage += 0.7; // Very large trade
+  
+  // Adjust for token pair
+  if (tokenPair.includes('meme') || tokenPair.includes('new')) {
+    baseSlippage += 1.0; // New or meme tokens
+  }
+  
+  return Math.min(baseSlippage, 5.0); // Cap at 5%
+}
+```
+
+### MEV Protection
+
+```javascript
+async function executeSwapWithMEVProtection(quote, userAccounts) {
+  // Add random delay to avoid predictable timing
+  const randomDelay = Math.random() * 2000; // 0-2 seconds
+  await new Promise(resolve => setTimeout(resolve, randomDelay));
+  
+  // Use higher slippage for MEV protection
+  const protectedQuote = {
+    ...quote,
+    slippage: Math.max(quote.slippage, 1.0) // Minimum 1% slippage
+  };
+  
+  return await swapService.executeSwap(protectedQuote, userAccounts);
+}
+```
+
+---
+
+## Testing & Validation
+
+### Unit Tests Example
+
+```javascript
+// Test swap quote calculation
+describe('Swap Service', () => {
+  let swapService;
+  
+  beforeEach(async () => {
+    swapService = new SarosSwapService(mockConnection, mockWallet);
+    await swapService.initialize();
+  });
+
+  test('should get direct swap quote', async () => {
+    const quote = await swapService.getSwapQuote(
+      'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v', // USDC
+      'C98A4nkJXhpVZNAZdHUA95RpTF3T4whtQubL3YobiUX9', // C98
+      100,
+      0.5
+    );
+
+    expect(quote.success).toBe(true);
+    expect(quote.route).toBe('direct');
+    expect(quote.toAmount).toBeGreaterThan(0);
+    expect(quote.priceImpact).toBeLessThan(2.0);
+  });
+
+  test('should handle invalid inputs', async () => {
+    const quote = await swapService.getSwapQuote('invalid', 'invalid', -1, 0.5);
+    
+    expect(quote.success).toBe(false);
+    expect(quote.error).toBeDefined();
+  });
+});
+```
+
+---
+
+## Production Deployment
+
+### Configuration
+
+```javascript
+// config/production.js
+export const PRODUCTION_CONFIG = {
+  RPC_ENDPOINT: process.env.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com',
+  MAX_SLIPPAGE: 5.0,
+  MAX_RETRIES: 3,
+  TIMEOUT_MS: 30000,
+  
+  MONITORING: {
+    enablePriceAlerts: true,
+    enableErrorTracking: true,
+    logLevel: 'info'
+  },
+  
+  POOLS: {
+    refreshInterval: 300000, // 5 minutes
+    maxAge: 600000 // 10 minutes
+  }
+};
+```
+
+### Monitoring
+
+```javascript
+class SwapMonitor {
+  constructor(swapService) {
+    this.swapService = swapService;
+    this.metrics = {
+      totalSwaps: 0,
+      successfulSwaps: 0,
+      failedSwaps: 0,
+      totalVolume: 0
     };
   }
 
-  /**
-   * Execute swap with current quote
-   */
-  async executeSwap() {
-    if (!this.currentQuote) {
-      return { success: false, error: 'No quote available' };
-    }
-
-    const { data } = this.currentQuote;
+  trackSwap(quote, result) {
+    this.metrics.totalSwaps++;
     
-    // Apply slippage to minimum output
-    const minOutput = data.minimumReceived * (1 - this.slippageTolerance / 100);
+    if (result.success) {
+      this.metrics.successfulSwaps++;
+      this.metrics.totalVolume += quote.fromAmount;
+    } else {
+      this.metrics.failedSwaps++;
+      this.reportError(result.error, quote);
+    }
+    
+    this.logMetrics();
+  }
 
-    // Execute based on route type
-    if (data.route === 'direct') {
-      return this.swapService.executeSwap({
-        fromMint: data.fromMint,
-        toMint: data.toMint,
-        amount: data.inputAmount,
-        minAmountOut: minOutput,
-        poolAddress: data.poolAddress,
-        fromTokenAccount: data.fromTokenAccount,
-        toTokenAccount: data.toTokenAccount
+  reportError(error, quote) {
+    console.error('Swap Error Tracked:', {
+      error: error.message,
+      quote,
+      timestamp: new Date().toISOString(),
+      successRate: this.getSuccessRate()
+    });
+  }
+
+  getSuccessRate() {
+    if (this.metrics.totalSwaps === 0) return 0;
+    return (this.metrics.successfulSwaps / this.metrics.totalSwaps * 100).toFixed(2);
+  }
+
+  logMetrics() {
+    if (this.metrics.totalSwaps % 10 === 0) { // Log every 10 swaps
+      console.log('Swap Metrics:', {
+        ...this.metrics,
+        successRate: this.getSuccessRate() + '%'
       });
-    } else {
-      // Handle routed swap
-      return this.executeRoutedSwap(data);
     }
-  }
-
-  /**
-   * Execute multi-hop swap
-   */
-  async executeRoutedSwap(routeData) {
-    // Implementation for routed swaps
-    // This would use swapRouteSaros from the SDK
-    console.log('Executing routed swap through:', routeData.path);
-    // ... implementation
   }
 }
 ```
 
-## Step 3: Real-World Implementation Example
+---
 
-Here's how to use everything together:
+## Best Practices Summary
 
-```javascript
-// main.js - Complete working example
-import SwapInterface from './SwapInterface';
+1. **Always validate inputs** before making SDK calls
+2. **Implement proper error handling** with user-friendly messages
+3. **Use appropriate slippage** based on token volatility and trade size
+4. **Cache token information** to reduce RPC calls
+5. **Monitor transaction status** and provide feedback to users
+6. **Test thoroughly** on devnet before mainnet deployment
+7. **Implement retry logic** for transient failures
+8. **Add monitoring and logging** for production systems
+9. **Consider MEV protection** for large trades
+10. **Keep the SDK updated** to latest version
 
-async function main() {
-  // Initialize with your wallet
-  const walletAddress = 'YOUR_WALLET_ADDRESS';
-  const swapInterface = new SwapInterface(walletAddress);
-
-  // Token addresses
-  const USDC = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
-  const C98 = 'C98A4nkJXhpVZNAZdHUA95RpTF3T4whtQubL3YobiUX9';
-
-  try {
-    // Step 1: Get quote
-    console.log('Getting swap quote...');
-    const quote = await swapInterface.getBestQuote(USDC, C98, 100);
-    
-    if (!quote.success) {
-      console.error('Failed to get quote:', quote.error);
-      return;
-    }
-
-    // Step 2: Display quote to user
-    console.log('Swap Quote:');
-    console.log(`Input: 100 USDC`);
-    console.log(`Output: ${quote.data.outputAmount} C98`);
-    console.log(`Minimum received: ${quote.data.minimumReceived} C98`);
-    console.log(`Price impact: ${quote.data.priceImpact}%`);
-    console.log(`Impact severity: ${quote.data.impactSeverity}`);
-
-    // Step 3: Check if user wants to proceed
-    if (quote.data.impactSeverity === 'severe') {
-      console.warn('⚠️ High price impact! Consider smaller amount.');
-      // In a real app, prompt user for confirmation
-    }
-
-    // Step 4: Set custom slippage if needed
-    swapInterface.setSlippage(1.0); // 1% slippage
-
-    // Step 5: Execute swap
-    console.log('Executing swap...');
-    const result = await swapInterface.executeSwap();
-
-    if (result.success) {
-      console.log('✅ Swap successful!');
-      console.log(`Transaction: ${result.explorerUrl}`);
-    } else {
-      console.error('❌ Swap failed:', result.error);
-    }
-
-  } catch (error) {
-    console.error('Unexpected error:', error);
-  }
-}
-
-// Run the example
-main().catch(console.error);
-```
-
-## Step 4: Handling Edge Cases
-
-### SOL Wrapping/Unwrapping
-
-When swapping to/from native SOL:
-
-```javascript
-async function handleSolSwap(fromToken, toToken, amount) {
-  const WRAPPED_SOL = 'So11111111111111111111111111111111111111112';
-  const isFromSol = fromToken === 'SOL';
-  const isToSol = toToken === 'SOL';
-
-  if (isFromSol) {
-    // Wrap SOL first
-    console.log('Wrapping SOL...');
-    fromToken = WRAPPED_SOL;
-  }
-
-  if (isToSol) {
-    // Will unwrap automatically after swap
-    toToken = WRAPPED_SOL;
-  }
-
-  // Proceed with swap
-  return swapInterface.getBestQuote(fromToken, toToken, amount);
-}
-```
-
-### Transaction Retry Logic
-
-```javascript
-async function swapWithRetry(params, maxRetries = 3) {
-  let attempts = 0;
-  let lastError;
-
-  while (attempts < maxRetries) {
-    attempts++;
-    console.log(`Attempt ${attempts}/${maxRetries}...`);
-
-    const result = await swapInterface.executeSwap(params);
-    
-    if (result.success) {
-      return result;
-    }
-
-    lastError = result.error;
-    
-    // Don't retry on certain errors
-    if (lastError.includes('Insufficient')) {
-      break;
-    }
-
-    // Wait before retry
-    await new Promise(resolve => setTimeout(resolve, 1000 * attempts));
-  }
-
-  return { success: false, error: lastError };
-}
-```
-
-## Testing Your Integration
-
-### 1. Devnet Testing
-
-```javascript
-// Use devnet connection
-import { Connection, clusterApiUrl } from '@solana/web3.js';
-
-const devnetConnection = new Connection(clusterApiUrl('devnet'));
-// Test with devnet tokens and pools
-```
-
-### 2. Mainnet Testing Checklist
-
-- [ ] Test with small amounts first (< $1)
-- [ ] Verify correct token accounts
-- [ ] Check slippage settings
-- [ ] Monitor price impact
-- [ ] Test error handling
-- [ ] Verify transaction confirmations
-
-## Common Issues and Solutions
-
-| Issue | Solution |
-|-------|----------|
-| "Transaction too large" | Split into multiple transactions or use simpler routing |
-| "Slippage tolerance exceeded" | Increase slippage or try again when market is less volatile |
-| "Pool not found" | Check pool address or try different token pair |
-| "Insufficient liquidity" | Use smaller amount or find pool with more liquidity |
-
-## Performance Optimization
-
-1. **Cache pool data**: Don't fetch pool info on every quote
-2. **Batch RPC calls**: Use `getMultipleAccountsInfo` for multiple accounts
-3. **Pre-calculate routes**: Store common swap routes
-4. **Use websockets**: Subscribe to pool updates for real-time quotes
+---
 
 ## Next Steps
 
-Congratulations! You now have a production-ready swap integration. Consider adding:
-- Price charts and history
-- Favorite token pairs
-- Transaction history
-- Advanced order types (limit orders)
-- MEV protection
+- **Advanced Features**: Explore [Liquidity Tutorial](./tutorial-liquidity.md)
+- **Yield Farming**: Learn [Farming Tutorial](./tutorial-farming.md)
+- **API Reference**: Check [Complete API Docs](./api-reference.md)
+- **Examples**: Browse [Working Code Examples](./code-examples.md)
 
-Check out our [Liquidity Tutorial](./tutorial-liquidity.md) to learn about providing liquidity and earning fees!
+---
+
+**Ready to go live?** Test your implementation thoroughly and deploy with confidence! 🚀

@@ -1,10 +1,10 @@
 'use client'
 
+import React from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeHighlight from 'rehype-highlight'
 import { Separator } from '@/components/ui/separator'
-import { ScrollArea } from '@/components/ui/scroll-area'
 import { ExternalLink } from 'lucide-react'
 import 'highlight.js/styles/github-dark.css'
 
@@ -14,7 +14,10 @@ interface MarkdownRendererProps {
 }
 
 export default function MarkdownRenderer({ content, hideFirstH1 = false }: MarkdownRendererProps) {
-  let h1Count = 0
+  // Pre-process content to remove first H1 if needed
+  const processedContent = hideFirstH1 
+    ? content.replace(/^#\s+.*$/m, '') // Remove the first H1 line
+    : content;
   
   return (
     <div className="prose prose-slate dark:prose-invert max-w-none">
@@ -23,24 +26,14 @@ export default function MarkdownRenderer({ content, hideFirstH1 = false }: Markd
           rehypePlugins={[rehypeHighlight]}
           components={{
             // Custom component styling with shadcn aesthetic
-            h1: ({ children }) => {
-              const isFirstH1 = h1Count === 0
-              h1Count++
-              
-              // Hide the first H1 if requested (since we show it in PageHeader)
-              if (isFirstH1 && hideFirstH1) {
-                return null
-              }
-              
-              return (
-                <div className="space-y-4">
-                  <h1 className="scroll-m-20 text-4xl font-extrabold tracking-tight lg:text-5xl">
-                    {children}
-                  </h1>
-                  <Separator />
-                </div>
-              )
-            },
+            h1: ({ children }) => (
+              <div className="space-y-4">
+                <h1 className="scroll-m-20 text-4xl font-extrabold tracking-tight lg:text-5xl">
+                  {children}
+                </h1>
+                <Separator />
+              </div>
+            ),
             h2: ({ children }) => (
               <h2 className="scroll-m-20 border-b pb-2 text-3xl font-semibold tracking-tight first:mt-0">
                 {children}
@@ -61,7 +54,7 @@ export default function MarkdownRenderer({ content, hideFirstH1 = false }: Markd
                 {children}
               </p>
             ),
-            code: ({ children, className, ...props }: any) => {
+            code: ({ children, className, ...props }: React.HTMLAttributes<HTMLElement> & { children?: React.ReactNode }) => {
               const isInline = !className?.includes('language-')
               if (isInline) {
                 return (
@@ -71,14 +64,14 @@ export default function MarkdownRenderer({ content, hideFirstH1 = false }: Markd
                 )
               }
               return (
-                <code className="block" {...props}>
+                <code className="block text-gray-100" {...props}>
                   {children}
                 </code>
               )
             },
             pre: ({ children }) => (
-              <pre className="mb-4 mt-6 overflow-x-auto rounded-lg border bg-zinc-950 py-4 dark:bg-zinc-900">
-                <div className="px-4">
+              <pre className="mb-4 mt-6 overflow-x-auto rounded-lg border bg-zinc-950 py-4 dark:bg-zinc-900 [&>*]:!text-gray-100">
+                <div className="px-4 text-gray-100">
                   {children}
                 </div>
               </pre>
@@ -149,7 +142,7 @@ export default function MarkdownRenderer({ content, hideFirstH1 = false }: Markd
             hr: () => <Separator className="my-6" />,
           }}
         >
-          {content}
+          {processedContent}
         </ReactMarkdown>
     </div>
   )
