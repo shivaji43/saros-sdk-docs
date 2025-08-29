@@ -6,6 +6,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import { ChevronDown, ChevronRight, FileText } from 'lucide-react'
+import ThemeToggle from './ThemeToggle'
 
 interface SidebarProps {
   currentDoc?: string
@@ -57,11 +58,14 @@ export default function Sidebar({ currentDoc }: SidebarProps) {
   return (
     <div className="hidden md:flex w-80 border-r bg-background flex-col">
       <div className="p-6">
-        <Link href="/" className="block">
-          <h1 className="text-2xl font-bold tracking-tight">
-            Saros SDK Docs
-          </h1>
-        </Link>
+        <div className="flex items-center justify-between">
+          <Link href="/" className="block">
+            <h1 className="text-2xl font-bold tracking-tight">
+              Saros SDK Docs
+            </h1>
+          </Link>
+          <ThemeToggle />
+        </div>
       </div>
       
       <Separator />

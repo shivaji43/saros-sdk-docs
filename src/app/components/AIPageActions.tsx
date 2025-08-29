@@ -67,20 +67,32 @@ This is documentation for the Saros SDK. For the most up-to-date information, vi
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="outline" size="sm" className="gap-2">
-          <Copy className="h-4 w-4" />
-          Copy
+        <Button variant="outline" size="sm" className={`gap-2 ${copied ? 'text-green-600 border-green-600' : ''}`}>
+          {copied ? (
+            <Check className="h-4 w-4" />
+          ) : (
+            <Copy className="h-4 w-4" />
+          )}
+          {copied ? 'Copied!' : 'Copy'}
           <ChevronDown className="h-4 w-4" />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-56">
-        <DropdownMenuItem onClick={handleCopyPage} className="gap-2">
-          <Copy className="h-4 w-4" />
-          <div className="flex flex-col">
-            <span>Copy page</span>
-            <span className="text-xs text-muted-foreground">Copy page as Markdown for LLMs</span>
+        <DropdownMenuItem onClick={handleCopyPage} className={`gap-2 ${copied ? 'bg-green-50 dark:bg-green-950' : ''}`}>
+          {copied ? (
+            <Check className="h-4 w-4 text-green-600" />
+          ) : (
+            <Copy className="h-4 w-4" />
+          )}
+          <div className="flex flex-col flex-1">
+            <span className={copied ? 'text-green-700 dark:text-green-400' : ''}>
+              {copied ? 'Copied successfully!' : 'Copy page'}
+            </span>
+            <span className="text-xs text-muted-foreground">
+              {copied ? 'Page copied as Markdown for LLMs' : 'Copy page as Markdown for LLMs'}
+            </span>
           </div>
-          {copied && <Check className="h-4 w-4 text-green-600 ml-auto" />}
+          {copied && <Check className="h-4 w-4 text-green-600 animate-pulse" />}
         </DropdownMenuItem>
         
         <DropdownMenuItem onClick={handleViewMarkdown} className="gap-2">

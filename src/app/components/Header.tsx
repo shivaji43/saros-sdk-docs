@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { Separator } from '@/components/ui/separator'
 import MobileNav from './MobileNav'
+import ThemeToggle from './ThemeToggle'
 
 interface HeaderProps {
   currentDoc?: string
@@ -19,6 +20,8 @@ export default function Header({ currentDoc }: HeaderProps) {
             Saros SDK Docs
           </h1>
         </Link>
+        
+        <ThemeToggle />
       </div>
     </header>
   )
