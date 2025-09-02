@@ -60,7 +60,7 @@ This is documentation for the Saros SDK. For the most up-to-date information, vi
 
   const handleOpenInClaude = () => {
     const prompt = `Please help me understand this documentation: ${window.location.href}`
-    const claudeUrl = `https://claude.ai/chat?q=${encodeURIComponent(prompt)}`
+    const claudeUrl = `https://claude.ai/new?q=${encodeURIComponent(prompt)}`
     window.open(claudeUrl, '_blank')
   }
 
