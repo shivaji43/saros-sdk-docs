@@ -6,6 +6,7 @@ import remarkGfm from 'remark-gfm'
 import rehypeHighlight from 'rehype-highlight'
 import { Separator } from '@/components/ui/separator'
 import { ExternalLink } from 'lucide-react'
+import CodeCopyButton from './CodeCopyButton'
 import 'highlight.js/styles/github-dark.css'
 
 interface MarkdownRendererProps {
@@ -69,13 +70,37 @@ export default function MarkdownRenderer({ content, hideFirstH1 = false }: Markd
                 </code>
               )
             },
-            pre: ({ children }) => (
-              <pre className="mb-4 mt-6 overflow-x-auto rounded-lg border bg-zinc-950 py-4 dark:bg-zinc-900 [&>*]:!text-gray-100">
-                <div className="px-4 text-gray-100">
-                  {children}
+            pre: (props: React.HTMLAttributes<HTMLPreElement> & { children?: React.ReactNode }) => {
+              const { children } = props;
+              
+              // Extract text content from the code element for copying
+              const extractCodeText = (element: React.ReactNode): string => {
+                if (typeof element === 'string') return element;
+                if (React.isValidElement(element)) {
+                  const elementProps = element.props as { children?: React.ReactNode };
+                  if (elementProps?.children) {
+                    if (Array.isArray(elementProps.children)) {
+                      return elementProps.children.map(extractCodeText).join('');
+                    }
+                    return extractCodeText(elementProps.children);
+                  }
+                }
+                return '';
+              };
+
+              const codeText = extractCodeText(children);
+
+              return (
+                <div className="relative mb-4 mt-6">
+                  <pre className="overflow-x-auto rounded-lg border bg-zinc-950 py-4 dark:bg-zinc-900 [&>*]:!text-gray-100">
+                    <div className="px-4 text-gray-100">
+                      {children}
+                    </div>
+                  </pre>
+                  <CodeCopyButton code={codeText} />
                 </div>
-              </pre>
-            ),
+              );
+            },
             blockquote: ({ children }) => (
               <blockquote className="mt-6 border-l-2 pl-6 italic">
                 {children}
